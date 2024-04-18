@@ -34,12 +34,18 @@ classdef MaskAnalyzer
             ip = inputParser;
             addOptional(ip, 'registerImages', false);
             addOptional(ip, 'findOversegmented', true);
+            addOptional(ip, 'frameRange', Inf);
             parse(ip, varargin{:});
 
-            %Begin processing
-            nImages = numel(imfinfo(refImagePath));
+            if isinf(ip.Results.frameRange)
+                frameRange = 1:numel(imfinfo(refImagePath));
+            else
+                frameRange = ip.Results.frameRange;
+            end
 
-            for iT = 1%:nImages
+            %Begin processing
+
+            for iT = frameRange
 
                 %Read in and validate images
                 refImage = imread(refImagePath, iT);
@@ -57,12 +63,7 @@ classdef MaskAnalyzer
 
                 end
 
-                %Find oversegmented objects
-                if ip.Results.findOversegmented
-
-                    err = obj.findSegmentationErrors(testImage, refImage);
-
-                end
+                [err, stats] = obj.findSegmentationErrors(testImage, refImage);
 
                 %Generate output images
                 [fPath, fName] = fileparts(testImagePath);
@@ -99,7 +100,7 @@ classdef MaskAnalyzer
 
                 Imerge = imfuse(testImage, bwperim(refImage));
 
-                if iT == 1
+                if iT == frameRange(1)
                     imwrite(Iout, fullfile(fPath, [fName, '_errs.tif']))
                     imwrite(Imerge, fullfile(fPath, [fName, '_merged.tif']))
                 else
@@ -107,6 +108,8 @@ classdef MaskAnalyzer
                     imwrite(Imerge, fullfile(fPath, [fName, '_merged.tif']), 'writeMode', 'append')
                 end
             end
+
+            save(fullfile(fPath, [fName, '_stats.mat']), 'stats', 'err')
 
         end
 
@@ -214,6 +217,10 @@ classdef MaskAnalyzer
             %  S = FINDSEGMENTATIONERRORS(TEST, REF) will compare the TEST
             %  image to the REF image. TEST and REF must be label images.
 
+            stats = struct('NumRef', 0, 'NumTest', 0, ...
+                'NumOversegmented', 0, 'NumUndersegmented', 0, ...
+                'NumMissing', 0, 'NumAdditional', 0);
+
             nErrors = 0;
 
             testObjectLabels = unique(Itest);
@@ -223,6 +230,9 @@ classdef MaskAnalyzer
             nRefObjects = max(refObjectLabels);
             isRefObjFound = false(1, nRefObjects);
 
+            stats.NumRef = nRefObjects;
+            stats.NumTest = nTestObjects;
+            
             for currTestObj = 1:nTestObjects
 
                 %Get reference labels under current test object
@@ -245,7 +255,9 @@ classdef MaskAnalyzer
                     errStruct(nErrors).BoundingBox = MaskAnalyzer.getBoundingBox(Itest, currTestObj);
                     errStruct(nErrors).Type = 'Additional';
 
-                elseif nCurrUniqueRefLabels > 1
+                    stats.NumAdditional = stats.NumAdditional + 1;
+
+                else
 
                     %Check if object is under-segmented - this is true if
                     %there are more than 1 reference labels which cover
@@ -269,6 +281,8 @@ classdef MaskAnalyzer
                                     errStruct(nErrors).BoundingBox = MaskAnalyzer.getBoundingBox(Itest, currTestObj);
                                     errStruct(nErrors).Type = 'Oversegmented';
 
+                                    stats.NumOversegmented = stats.NumOversegmented + 1;
+
                                 else
                                     isRefObjFound(ii) = true;
                                 end
@@ -284,6 +298,8 @@ classdef MaskAnalyzer
                         errStruct(nErrors).testObjLabel = currTestObj;
                         errStruct(nErrors).BoundingBox = MaskAnalyzer.getBoundingBox(Itest, currTestObj);
                         errStruct(nErrors).Type = 'Undersegmented';
+
+                        stats.NumUndersegmented = stats.NumUndersegmented + 1;
 
                     end
 
@@ -302,6 +318,8 @@ classdef MaskAnalyzer
                 errStruct(nErrors).refObjLabel = currRefObj;
                 errStruct(nErrors).BoundingBox = MaskAnalyzer.getBoundingBox(Iref, currRefObj);
                 errStruct(nErrors).Type = 'Missing';
+
+                stats.NumMissing = stats.NumMissing + 1;
 
             end
 
