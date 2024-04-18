@@ -255,7 +255,7 @@ classdef MaskAnalyzer
                     currUniqueRefLabels(currUniqueRefLabels == 0) = [];
 
                     for ii = reshape(currUniqueRefLabels, 1, [])                        
-                        if nnz(currRefLabels == ii) > (0.2 * szCurrTestObj)
+                        if nnz(currRefLabels == ii) > (0.3 * szCurrTestObj)
 
                             nLabelsGT = nLabelsGT + 1;
                             
@@ -268,6 +268,8 @@ classdef MaskAnalyzer
                                     errStruct(nErrors).testObjLabel = currTestObj;
                                     errStruct(nErrors).BoundingBox = MaskAnalyzer.getBoundingBox(Itest, currTestObj);
                                     errStruct(nErrors).Type = 'Oversegmented';
+
+                                    continue;
 
                                 else
                                     isRefObjFound(ii) = true;
@@ -304,6 +306,7 @@ classdef MaskAnalyzer
                 errStruct(nErrors).Type = 'Missing';
 
             end
+
 
             if nErrors == 0
                 errStruct = [];
