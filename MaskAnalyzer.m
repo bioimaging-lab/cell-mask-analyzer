@@ -1,6 +1,6 @@
 classdef MaskAnalyzer
     %MASKANALYZER  Quantify errors in cell image masks
-    
+
 
     %  Originally created by Dr. Jian Wei Tay (jian.tay@colorado.edu)
 
@@ -24,93 +24,111 @@ classdef MaskAnalyzer
             %  objects (objects in REF but not in TEST), and additional
             %  objects (objects in TEST but not in REF). There is a
             %  built-in tolerance to allow for minor inconsistencies.
-          
 
-            %Basic process:
-            %  * Register the two masks to correct for any systematic erros
-            %  * Label the test mask
-            %  * Calculate over/under-segmentation
+            %Parse inputs
+            if ~iscell(testImagePath)
+                testImagePath = {testImagePath};
+            end
+
+            if ~iscell(refImagePath)
+                refImagePath = {refImagePath};
+            end
+
+            if numel(refImagePath) == 1 && numel(testImagePath) > 1
+                [refImagePath{1:numel(testImagePath)}] = deal(refImagePath{1});
+            end
 
             ip = inputParser;
             addOptional(ip, 'registerImages', false);
-            addOptional(ip, 'findOversegmented', true);
             addOptional(ip, 'frameRange', Inf);
             parse(ip, varargin{:});
 
-            if isinf(ip.Results.frameRange)
-                frameRange = 1:numel(imfinfo(refImagePath));
-            else
-                frameRange = ip.Results.frameRange;
-            end
+            for iFile = 1:numel(testImagePath)
 
-            %Begin processing
-
-            for iT = frameRange
-
-                %Read in and validate images
-                refImage = imread(refImagePath, iT);
-                testImage = imread(testImagePath, iT);
-
-                %Convert the test image into labels
-                refImage = obj.relabelMask(refImage);
-                testImage = obj.relabelMask(testImage);
-                
-                %Register test image to reference image
-                if ip.Results.registerImages
-
-                    pxshift = obj.xcorrreg(refImage > 0, testImage > 0);                    
-                    testImage = circshift(testImage, pxshift);
-
+                if isinf(ip.Results.frameRange)
+                    frameRange = 1:numel(imfinfo(refImagePath{iFile}));
+                else
+                    frameRange = ip.Results.frameRange;
                 end
 
-                [err, stats] = obj.findSegmentationErrors(testImage, refImage);
+                %Begin processing
+                storeError = cell(numel(frameRange), 1);
+                storeStats = cell(numel(frameRange), 1);
 
-                %Generate output images
-                [fPath, fName] = fileparts(testImagePath);
+                ctr = 0;
 
-                Iout = uint8((testImage > 0) * 255);
-                
-                %Visualize the errors
-                for iErr = 1:numel(err)
+                for iT = frameRange
 
-                    switch lower(err(iErr).Type)
+                    %Read in and validate images
+                    refImage = imread(refImagePath{iFile}, iT);
+                    testImage = imread(testImagePath{iFile}, iT);
 
-                        case 'oversegmented'
-                            color = 'magenta';
+                    %Convert the test image into labels
+                    refImage = obj.relabelMask(refImage);
+                    testImage = obj.relabelMask(testImage);
 
-                        case 'undersegmented'
-                            color = 'blue';
+                    %Register test image to reference image
+                    if ip.Results.registerImages
 
-                        case 'missing'
-                            color = 'red';
-
-                        case 'additional'
-                            color = 'green';
+                        pxshift = obj.xcorrreg(refImage > 0, testImage > 0);
+                        testImage = circshift(testImage, pxshift);
 
                     end
 
-                    %Draw a bounding box
-                    Iout = insertShape(Iout, 'rectangle', ...
-                        [err(iErr).BoundingBox(1), err(iErr).BoundingBox(2),...
-                        err(iErr).BoundingBox(3) - err(iErr).BoundingBox(1) + 1,...
-                        err(iErr).BoundingBox(4) - err(iErr).BoundingBox(2) + 1], ...
-                        'ShapeColor', color);
+                    [err, stats] = obj.findSegmentationErrors(testImage, refImage);
+
+                    %Store error and stats
+                    ctr = ctr + 1;
+                    storeError{ctr} = err;
+                    storeStats{ctr} = stats;
+
+                    %Generate output images
+                    [fPath, fName] = fileparts(testImagePath{iFile});
+
+                    Iout = uint8((testImage > 0) * 255);
+
+                    %Visualize the errors
+                    for iErr = 1:numel(err)
+
+                        switch lower(err(iErr).Type)
+
+                            case 'oversegmented'
+                                color = 'magenta';
+
+                            case 'undersegmented'
+                                color = 'blue';
+
+                            case 'missing'
+                                color = 'red';
+
+                            case 'additional'
+                                color = 'green';
+
+                        end
+
+                        %Draw a bounding box
+                        Iout = insertShape(Iout, 'rectangle', ...
+                            [err(iErr).BoundingBox(1), err(iErr).BoundingBox(2),...
+                            err(iErr).BoundingBox(3) - err(iErr).BoundingBox(1) + 1,...
+                            err(iErr).BoundingBox(4) - err(iErr).BoundingBox(2) + 1], ...
+                            'ShapeColor', color);
+
+                    end
+
+                    Imerge = imfuse(testImage, bwperim(refImage));
+
+                    if iT == frameRange(1)
+                        imwrite(Iout, fullfile(fPath, [fName, '_errs.tif']))
+                        imwrite(Imerge, fullfile(fPath, [fName, '_merged.tif']))
+                    else
+                        imwrite(Iout, fullfile(fPath, [fName, '_errs.tif']), 'writeMode', 'append')
+                        imwrite(Imerge, fullfile(fPath, [fName, '_merged.tif']), 'writeMode', 'append')
+                    end
 
                 end
 
-                Imerge = imfuse(testImage, bwperim(refImage));
-
-                if iT == frameRange(1)
-                    imwrite(Iout, fullfile(fPath, [fName, '_errs.tif']))
-                    imwrite(Imerge, fullfile(fPath, [fName, '_merged.tif']))
-                else
-                    imwrite(Iout, fullfile(fPath, [fName, '_errs.tif']), 'writeMode', 'append')
-                    imwrite(Imerge, fullfile(fPath, [fName, '_merged.tif']), 'writeMode', 'append')
-                end
+                save(fullfile(fPath, [fName, '_stats.mat']), 'storeStats', 'storeError')
             end
-
-            save(fullfile(fPath, [fName, '_stats.mat']), 'stats', 'err')
-
         end
 
     end
@@ -134,7 +152,7 @@ classdef MaskAnalyzer
 
             end
 
-            if islogical(Iin)       
+            if islogical(Iin)
 
                 labels = bwlabel(Iin);
 
@@ -183,7 +201,7 @@ classdef MaskAnalyzer
             colRight = find(anyCol, 1, 'last');
 
             BB = [colLeft, rowTop, colRight, rowBottom];
-            
+
         end
 
         function pxShift = xcorrreg(refImg, movedImg)
@@ -232,7 +250,7 @@ classdef MaskAnalyzer
 
             stats.NumRef = nRefObjects;
             stats.NumTest = nTestObjects;
-            
+
             for currTestObj = 1:nTestObjects
 
                 %Get reference labels under current test object
@@ -266,11 +284,11 @@ classdef MaskAnalyzer
 
                     currUniqueRefLabels(currUniqueRefLabels == 0) = [];
 
-                    for ii = reshape(currUniqueRefLabels, 1, [])                        
+                    for ii = reshape(currUniqueRefLabels, 1, [])
                         if nnz(currRefLabels == ii) > (0.2 * szCurrTestObj)
 
                             nLabelsGT = nLabelsGT + 1;
-                            
+
                             if ii ~= 0
 
                                 if isRefObjFound(ii)
