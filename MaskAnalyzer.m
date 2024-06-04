@@ -252,6 +252,9 @@ classdef MaskAnalyzer
             stats.NumTest = nTestObjects;
 
             for currTestObj = 1:nTestObjects
+                % if currTestObj == 324
+                %     keyboard
+                % end
 
                 %Get reference labels under current test object
                 currRefLabels = Iref(Itest == currTestObj);
@@ -285,12 +288,15 @@ classdef MaskAnalyzer
                     currUniqueRefLabels(currUniqueRefLabels == 0) = [];
 
                     for ii = reshape(currUniqueRefLabels, 1, [])
-                        if nnz(currRefLabels == ii) > (0.2 * szCurrTestObj)
+                        if nnz(currRefLabels == ii) > 150 || ...
+                                nnz(currRefLabels == ii) > (0.15 * szCurrTestObj)
 
                             nLabelsGT = nLabelsGT + 1;
 
                             if ii ~= 0
 
+                                %If reference object was already previously
+                                %found, then the object is oversegmented
                                 if isRefObjFound(ii)
 
                                     nErrors = nErrors + 1;
